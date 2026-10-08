@@ -162,6 +162,14 @@ bool superfx_replay_snapshot_with_hooks(const SuperFx *source,
                                         uint8_t *private_ram, SuperFx *result,
                                         const SuperFxReplayPcHook *hooks,
                                         unsigned hook_count);
+/* Optional diagnostic history for private presentation work. false skips only
+ * the per-instruction trace-ring writes; instruction counts, architecture,
+ * hooks, RAM, clocks and the execution guard are identical. Native execution
+ * and the existing replay APIs always retain their history. */
+bool superfx_replay_snapshot_with_history(const SuperFx *source,
+                                          uint8_t *private_ram, SuperFx *result,
+                                          const SuperFxReplayPcHook *hooks,
+                                          unsigned hook_count, bool history);
 bool superfx_set_pc_hook(SuperFx *fx, uint32_t pc24, SuperFxPcHook *hook,
                          void *context);
 void superfx_clear_pc_hooks(SuperFx *fx);

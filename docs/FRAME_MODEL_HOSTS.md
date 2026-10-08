@@ -45,6 +45,14 @@ encodes, both learned from Doom's raster chain:
   deadline spent, the handler yields at its first instruction and the next
   delivery stacks a second interrupt frame on top of it.
 
+The beam driver selects `RtlEnableBeamFrameTiming`. Each returned field advances
+the host simulation deadline by one period. The APU follows actual elapsed CPU
+master clocks, including short deltas that repay CPU/DMA overshoot from the
+previous field. Applying the extended frame-model clock's one-field minimum
+to those short deltas would count the overshoot twice and slow host pacing.
+Other frame-model hosts retain the minimum and multi-field loading contract
+of `RtlEnableExtendedFrameTiming`.
+
 The raster journal (`ppu_raster*`, ppu.c) records every display-register write
 -- `$2100-$2133` except the VRAM/CGRAM/OAM data ports, plus HDMAEN -- with its
 beam line, from `ppu_write` itself, so CPU stores, DMA and beam HDMA are all

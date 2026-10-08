@@ -23,14 +23,28 @@ static inline uint64_t rtl_apu_clock_now(const RtlApuFrameClock *clock,
                                RTL_MASTER_CYCLES_PER_FRAME;
 }
 
-static inline uint64_t rtl_apu_clock_finish(RtlApuFrameClock *clock,
-                                           uint64_t master) {
+static inline uint64_t rtl_apu_clock_finish_minimum(RtlApuFrameClock *clock,
+                                                   uint64_t master,
+                                                   uint64_t minimum_duration) {
   uint64_t end = rtl_apu_clock_now(clock, master);
-  uint64_t minimum = clock->start_guest + RTL_APU_CYCLES_PER_FRAME;
+  uint64_t minimum = clock->start_guest + minimum_duration;
   if (end < minimum) end = minimum;  /* WAI still advances a hardware frame. */
   clock->last_duration = end - clock->start_guest;
   clock->next_guest = end;
   /* Leave the current origin intact: raster IRQs can still touch APU ports
    * between the completed game iteration and the next clock_begin. */
   return end;
+}
+
+static inline uint64_t rtl_apu_clock_finish(RtlApuFrameClock *clock,
+                                           uint64_t master) {
+  return rtl_apu_clock_finish_minimum(clock, master, RTL_APU_CYCLES_PER_FRAME);
+}
+
+/* A beam scheduler already advances parked time and carries CPU/DMA overshoot
+ * into the next field. Short CPU deltas repay that overshoot; clamping them
+ * to a full field would produce audio time twice. */
+static inline uint64_t rtl_apu_clock_finish_beam(RtlApuFrameClock *clock,
+                                                uint64_t master) {
+  return rtl_apu_clock_finish_minimum(clock, master, 0);
 }

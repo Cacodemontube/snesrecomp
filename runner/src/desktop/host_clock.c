@@ -33,6 +33,14 @@ bool snes_host_clock_presentation_due(const SnesHostClock *c, double now) {
   return now >= c->next_presentation;
 }
 
+bool snes_host_clock_presentation_allowed(const SnesHostClock *c, double now,
+                                          bool preserve_debt, double draw_cost) {
+  if (!preserve_debt) return true;
+  if (snes_host_clock_simulation_due(c, now)) return false;
+  if (!isfinite(draw_cost) || draw_cost < 0) draw_cost = 0;
+  return now + draw_cost <= c->next_simulation;
+}
+
 void snes_host_clock_presentation_done(SnesHostClock *c, double now) {
   double period = 1.0 / c->presentation_hz;
   double overdue = fmax(0, now - c->next_presentation);

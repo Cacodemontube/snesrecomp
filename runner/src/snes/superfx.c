@@ -467,17 +467,19 @@ void superfx_hook_redirect(SuperFx *f, uint16_t address) {
   f->redirect_pc = address;
 }
 
-static void run_one(SuperFx *f) {
+static inline void run_one_with_history(SuperFx *f, bool history) {
   if (!(f->sfr & SFR_G)) { step_clocks(f, 6); return; }
   if (f->pc_hook_count && run_pc_hook(f)) return;
   uint8_t op=f->pipeline;
   uint64_t sequence=++f->instruction_count;
-  SuperFxTraceEntry *trace=&f->trace[sequence&255];
-  trace->sequence=sequence;
-  trace->r15=rv(f,15);
-  trace->sfr=f->sfr;
-  trace->pbr=f->pbr;
-  trace->opcode=op;
+  if (history) {
+    SuperFxTraceEntry *trace=&f->trace[sequence&255];
+    trace->sequence=sequence;
+    trace->r15=rv(f,15);
+    trace->sfr=f->sfr;
+    trace->pbr=f->pbr;
+    trace->opcode=op;
+  }
   f->pipeline_pc=((uint32_t)f->pbr<<16)|rv(f,15);
   f->pipeline=read_opcode(f,rv(f,15));
   f->r[15].modified=false;
@@ -485,6 +487,8 @@ static void run_one(SuperFx *f) {
   if(f->r[14].modified){ f->r[14].modified=false; update_rom_buffer(f); }
   if(f->r[15].modified) f->r[15].modified=false; else wr(f,15,rv(f,15)+1), f->r[15].modified=false;
 }
+
+static void run_one(SuperFx *f) { run_one_with_history(f, true); }
 
 static bool render_widescreen_frame(SuperFx *f) {
   if (f->enhancement_mode !=
@@ -574,6 +578,14 @@ bool superfx_replay_snapshot_with_hooks(const SuperFx *source,
                                         uint8_t *private_ram, SuperFx *result,
                                         const SuperFxReplayPcHook *hooks,
                                         unsigned hook_count) {
+  return superfx_replay_snapshot_with_history(source, private_ram, result,
+                                              hooks, hook_count, true);
+}
+
+bool superfx_replay_snapshot_with_history(const SuperFx *source,
+                                          uint8_t *private_ram, SuperFx *result,
+                                          const SuperFxReplayPcHook *hooks,
+                                          unsigned hook_count, bool history) {
   if (!source || !private_ram || !result || source == result ||
       private_ram == source->ram ||
       (hook_count && !hooks) || hook_count > UINT16_MAX ||
@@ -598,8 +610,13 @@ bool superfx_replay_snapshot_with_hooks(const SuperFx *source,
   result->pc_hook_count = result->pc_hook_cap = (uint16_t)hook_count;
   result->redirect_pending = false;
   unsigned guard = 0;
-  while ((result->sfr & SFR_G) && guard++ < 20000000)
-    run_one(result);
+  if (history) {
+    while ((result->sfr & SFR_G) && guard++ < 20000000)
+      run_one_with_history(result, true);
+  } else {
+    while ((result->sfr & SFR_G) && guard++ < 20000000)
+      run_one_with_history(result, false);
+  }
   free(result->pc_hooks);
   result->pc_hooks = NULL;
   result->pc_hook_count = result->pc_hook_cap = 0;

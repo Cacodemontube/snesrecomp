@@ -309,6 +309,8 @@ enum { kFrameTimingCapacity = 36000 };
 typedef struct FrameTiming {
   unsigned frame;
   double at, periods, stages[kProfileCount];
+  uint64_t audio_underflows, audio_missing, audio_dropped_audible;
+  uint32_t audio_occupancy;
 } FrameTiming;
 static FrameTiming *g_frame_timings;
 static unsigned g_frame_timing_count;
@@ -320,6 +322,12 @@ static void RecordFrameTiming(unsigned frame) {
   t->frame = frame;
   t->at = MonotonicSeconds();
   t->periods = RtlLastFramePeriods();
+  AudioTraceStats audio;
+  audio_trace_get_stats(&audio);
+  t->audio_underflows = audio.output_underflows;
+  t->audio_missing = audio.output_missing_frames;
+  t->audio_dropped_audible = audio.dropped_audible;
+  t->audio_occupancy = audio.occupancy_current;
   for (unsigned i = 0; i < kProfileCount; ++i) {
     t->stages[i] = g_timings[i].total - g_frame_timing_previous[i];
     g_frame_timing_previous[i] = g_timings[i].total;
@@ -3585,6 +3593,7 @@ error_reading:;
   const char *trace_path = HostGetenv("STATE_TRACE");
   FILE *state_trace = trace_path ? fopen(trace_path, "w") : NULL;
   uint64_t presentations = 0;
+  double last_custom_draw_cost = 0;
   const char *frame_timing_path = HostGetenv("FRAME_TIMING");
   if (frame_timing_path) g_frame_timings = calloc(kFrameTimingCapacity, sizeof(*g_frame_timings));
   bool profile_requested = g_frame_timings ||
@@ -3800,6 +3809,7 @@ error_reading:;
      * everyone else presents once per simulated frame. */
     bool paced_realtime = !g_turbo && !g_config.disable_frame_delay;
     bool paced_custom = PresentationDecoupled() && paced_realtime;
+    bool keep_pacing_debt = game->keep_pacing_debt && game->keep_pacing_debt();
     double video_now = MonotonicSeconds();
     if (video_now >= next_display_check) {
       double hz = WantedPresentationHz(DisplayRefresh());
@@ -3818,9 +3828,18 @@ error_reading:;
       if (snes_host_clock_presentation_due(&video_clock, MonotonicSeconds())) {
         if (paced_custom) {
           double presented_at = MonotonicSeconds();
+          if (!snes_host_clock_presentation_allowed(&video_clock, presented_at,
+                                                    keep_pacing_debt, last_custom_draw_cost)) {
+            /* An extra interpolated picture must not displace the guest work
+             * that produces the next audio samples. Avoid retrying an expired
+             * presentation deadline in a busy loop while waiting for it. */
+            WaitUntil(video_clock.next_simulation);
+            continue;
+          }
           g_present_alpha = presentation_hz != g_simulation_hz
               ? snes_host_clock_alpha(&video_clock, presented_at) : 1;
           DrawPpuFrameWithPerf();
+          last_custom_draw_cost = MonotonicSeconds() - presented_at;
           ++presentations;
           /* Count deadlines at dispatch, not after the render/upload cost:
            * crossing the next deadline while drawing does not consume it. */
@@ -4054,19 +4073,23 @@ error_reading:;
               g_cpu.S, g_cpu.D, g_cpu.DB, g_cpu.PB, g_cpu.P);
     ProfileEnd(kProfileTrace, profile_start);
     if (paced_realtime) {
-      bool keep_debt = game->keep_pacing_debt && game->keep_pacing_debt();
-      snes_host_clock_simulation_done(&video_clock, MonotonicSeconds(), keep_debt,
+      snes_host_clock_simulation_done(&video_clock, MonotonicSeconds(), keep_pacing_debt,
                                       RtlLastFramePeriods());
     }
     else
       snes_host_clock_reset(&video_clock, MonotonicSeconds(), g_simulation_hz, presentation_hz);
+    const double presentation_now = MonotonicSeconds();
     if (!g_snes->disableRender &&
-        (!paced_custom || snes_host_clock_presentation_due(&video_clock, MonotonicSeconds()) ||
+        (!paced_custom ||
+         (snes_host_clock_presentation_due(&video_clock, presentation_now) &&
+          snes_host_clock_presentation_allowed(&video_clock, presentation_now,
+                                               keep_pacing_debt, 0)) ||
          (run_frames && frameCtr >= run_frames))) {
       double presented_at = MonotonicSeconds();
       g_present_alpha = paced_custom && presentation_hz != g_simulation_hz
           ? snes_host_clock_alpha(&video_clock, presented_at) : 1;
       DrawPpuFrameWithPerf();
+      if (paced_custom) last_custom_draw_cost = MonotonicSeconds() - presented_at;
       ++presentations;
       snes_host_clock_presentation_done(&video_clock, presented_at);
     }
@@ -4082,11 +4105,14 @@ error_reading:;
   if (g_frame_timings) {
     FILE *f = fopen(frame_timing_path, "w");
     if (f) {
-      fprintf(f, "frame,present_seconds,guest_periods,guest_ms,raster_ms,acquire_ms,compose_ms,present_ms,trace_ms,hook_ms,events_ms,wait_ms\n");
+      fprintf(f, "frame,present_seconds,guest_periods,guest_ms,raster_ms,acquire_ms,compose_ms,present_ms,trace_ms,hook_ms,events_ms,wait_ms,audio_underflows,audio_missing_frames,audio_dropped_audible,audio_occupancy\n");
       for (unsigned n = 0; n < g_frame_timing_count; ++n) {
         const FrameTiming *t = &g_frame_timings[n];
         fprintf(f, "%u,%.9f,%.6f", t->frame, t->at - profile_window_start, t->periods);
         for (unsigned i = 0; i < kProfileCount; ++i) fprintf(f, ",%.6f", t->stages[i] * 1000);
+        fprintf(f, ",%llu,%llu,%llu,%u", (unsigned long long)t->audio_underflows,
+                (unsigned long long)t->audio_missing,
+                (unsigned long long)t->audio_dropped_audible, t->audio_occupancy);
         fputc('\n', f);
       }
       fclose(f);

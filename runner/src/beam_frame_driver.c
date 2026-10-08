@@ -115,6 +115,7 @@ static void run_interrupt(uint32_t vector, uint64_t deadline) {
 }
 
 void snes_beam_frame_driver_run_frame(void) {
+  RtlEnableBeamFrameTiming();
   const bool booting = s_resume_pc == 0;
   int slices = 0;
   uint64_t frame_end;

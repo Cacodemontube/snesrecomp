@@ -226,6 +226,7 @@ uint64_t g_apu_last_sync_master = 0;
 static uint64_t g_apu_frame_start_master;
 static RtlApuFrameClock g_apu_frame_clock;
 static bool g_extended_frame_timing;
+static bool g_beam_frame_timing;
 static bool g_apu_frame_time_valid;
 
 bool rtl_apu_frame_timeline_active(void) {
@@ -233,12 +234,18 @@ bool rtl_apu_frame_timeline_active(void) {
 }
 
 double RtlLastFramePeriods(void) {
+  if (g_beam_frame_timing) return 1.0;
   return g_extended_frame_timing && g_apu_frame_clock.last_duration
       ? (double)g_apu_frame_clock.last_duration / RTL_APU_CYCLES_PER_FRAME : 1.0;
 }
 
 void RtlEnableExtendedFrameTiming(void) {
   g_extended_frame_timing = true;
+}
+
+void RtlEnableBeamFrameTiming(void) {
+  g_extended_frame_timing = true;
+  g_beam_frame_timing = true;
 }
 
 bool rtl_apu_extended_frame_timing(void) {
@@ -2121,7 +2128,9 @@ static void rtl_sync_apu_frame_boundary(void) {
    * boundary after the completed frame; adding its stale within-frame master
    * offset here would count the frame body twice. */
   uint64_t boundary = g_extended_frame_timing
-      ? rtl_apu_clock_finish(&g_apu_frame_clock, g_cpu.master_cycles)
+      ? (g_beam_frame_timing
+          ? rtl_apu_clock_finish_beam(&g_apu_frame_clock, g_cpu.master_cycles)
+          : rtl_apu_clock_finish(&g_apu_frame_clock, g_cpu.master_cycles))
       : (uint64_t)snes_frame_counter * RTL_APU_CYCLES_PER_FRAME;
   bool synced = apu_runToGuestCycle(g_snes->apu, boundary,
                                     1u << 20);

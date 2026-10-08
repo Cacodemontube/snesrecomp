@@ -45,6 +45,11 @@ void   snes_host_clock_simulation_done(SnesHostClock *c, double now,
                                        bool preserve_debt, double elapsed_periods);
 bool   snes_host_clock_presentation_due(const SnesHostClock *c, double now);
 void   snes_host_clock_presentation_done(SnesHostClock *c, double now);
+/* Debt-preserving custom presenters yield to overdue guest work. Between
+ * simulations, estimated render cost must fit before the next guest deadline.
+ * Pass zero cost after a simulation to permit a necessary fresh picture. */
+bool   snes_host_clock_presentation_allowed(const SnesHostClock *c, double now,
+                                            bool preserve_debt, double draw_cost);
 double snes_host_clock_alpha(const SnesHostClock *c, double now);
 double snes_host_clock_next_deadline(const SnesHostClock *c);
 

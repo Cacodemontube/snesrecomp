@@ -59,6 +59,9 @@ bool rtl_apu_frame_timeline_active(void);
  * Audio stays on one carried guest clock across multi-frame work. Existing
  * hosts retain their timing until they adopt this contract. */
 void RtlEnableExtendedFrameTiming(void);
+/* Beam-owned iterations return one console field. CPU overshoot is carried
+ * across fields in the APU clock rather than imposing a per-call minimum. */
+void RtlEnableBeamFrameTiming(void);
 double RtlLastFramePeriods(void);
 bool rtl_apu_extended_frame_timing(void);
 void rtl_apu_snapshot_pacing(uint64_t *frame_start_master, uint8_t *frame_time_valid);

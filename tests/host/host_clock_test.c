@@ -81,6 +81,34 @@ int main(void) {
   assert(snes_host_presentation_hz(120, 165) == 120);
   assert(snes_host_presentation_hz(100, 165) == 165);
 
+  /* Costly video must yield to audio-producing guest frames, while ordinary
+   * hosts retain their existing presentation policy. */
+  SnesHostClock priority;
+  snes_host_clock_reset(&priority, 0, 60, 120);
+  assert(!snes_host_clock_presentation_allowed(&priority, 0, true, 0));
+  assert(snes_host_clock_presentation_allowed(&priority, 0, false, 1));
+  snes_host_clock_simulation_done(&priority, 0.008, true, 1);
+  assert(snes_host_clock_presentation_allowed(&priority, 0.008, true, 0));
+  assert(!snes_host_clock_presentation_allowed(&priority, 0.008, true, 0.012));
+  assert(snes_host_clock_presentation_allowed(&priority, 0.008, true, NAN));
+  double now = 0.008;
+  while (now < 2) {
+    if (snes_host_clock_simulation_due(&priority, now)) {
+      now += 0.008;
+      snes_host_clock_simulation_done(&priority, now, true, 1);
+    }
+    if (snes_host_clock_presentation_due(&priority, now) &&
+        snes_host_clock_presentation_allowed(&priority, now, true, 0)) {
+      double dispatch = now;
+      now += 0.012;
+      snes_host_clock_presentation_done(&priority, dispatch);
+    } else if (!snes_host_clock_simulation_due(&priority, now)) {
+      now = priority.next_simulation;
+    }
+  }
+  assert(priority.simulation_frames >= 119 && priority.simulation_frames <= 121);
+  assert(priority.presentations > 60 && priority.presentations < 119);
+
   puts("host_clock: all checks passed");
   return 0;
 }
