@@ -1551,6 +1551,7 @@ static void ResetAudioTimeline(void);
 static uint32 g_overlay_release_mask;
 static void OverlayNoteClosed(void) {
   g_overlay_release_mask |= OverlayNavInputs();
+  if (g_game->input_suspended) g_game->input_suspended(0);
 }
 static uint32 OverlayFilterGuestInput(uint32 inputs) {
   g_overlay_release_mask &= inputs;   /* a released button drops out */
@@ -1898,6 +1899,7 @@ static void RunSavestateMenuLoop(bool *running) {
   host_report_breadcrumb("save-state browser OPEN - guest frozen until it "
                          "closes (pad B, or Escape/Backspace on the keyboard)");
   g_overlay_modal = true;
+  if (g_game->input_suspended) g_game->input_suspended(1);
   SetAudioPaused(true);
   while (snes_savestate_menu_is_open() && *running) {
     /* Key presses go straight to the overlay, NOT through HandleInput: the
@@ -1945,6 +1947,7 @@ static void RunRewindLoop(bool *running) {
   host_report_breadcrumb("rewind filmstrip OPEN - guest frozen until it closes "
                          "(pad B, or Escape; Left/Right scrub, A or Enter commits)");
   g_overlay_modal = true;
+  if (g_game->input_suspended) g_game->input_suspended(1);
   SetAudioPaused(true);
   while (snes_rewind_is_open() && *running) {
     PumpOverlayEvents(running, &RewindKeyDown);
@@ -2787,6 +2790,7 @@ static void RunInGameLauncher(bool *running, const char **exit_reason) {
   uint8 *mods_before = g_mod_state_path[0]
       ? ReadWholeFile(g_mod_state_path, &mods_before_len) : NULL;
   g_overlay_modal = true;
+  if (g_game->input_suspended) g_game->input_suspended(1);
   SetAudioPaused(true);
   SDL_HideWindow(g_window);
   /* This process keeps running after the launcher's window closes. */
@@ -3650,6 +3654,8 @@ error_reading:;
     while (SDL_PollEvent(&event)) {
       if (HandleDeviceEvent(&event))
         continue;
+      if (game->input_event && game->input_event(&event))
+        continue;
       switch (event.type) {
       case SDL_MOUSEWHEEL:
         if (SDL_GetModState() & KMOD_CTRL && event.wheel.y != 0)
@@ -3701,11 +3707,13 @@ error_reading:;
     ProfileEnd(kProfileEvents, event_profile_start);
     if (g_paused != audiopaused) {
       audiopaused = g_paused;
+      if (game->input_suspended) game->input_suspended(g_paused);
       SetAudioPaused(audiopaused);
     }
 
     if (g_paused && !g_savestate_menu_hotkey && !g_rewind_hotkey &&
         !g_open_launcher_hotkey) {
+      if (game->input_suspended) game->input_suspended(1);
       snes_host_clock_reset(&video_clock, MonotonicSeconds(), g_simulation_hz, presentation_hz);
       SDL_Delay(16);
       continue;
@@ -4230,6 +4238,10 @@ static void PollKeyboardControls(const uint8_t *keys) {
    * releases keys held under its previous assignment. Hotkeys remain separate. */
   uint32 p1 = g_config.player_src[0] == 1 ? keybinds_read_player_runner(keys, 1) : 0;
   uint32 p2 = g_config.player_src[1] == 1 ? keybinds_read_player_runner(keys, 2) : 0;
+  if (!g_overlay_modal && g_game->keyboard_input) {
+    if (g_config.player_src[0] == 1) p1 = g_game->keyboard_input(keys, 0, (uint16_t)p1);
+    if (g_config.player_src[1] == 1) p2 = g_game->keyboard_input(keys, 1, (uint16_t)p2);
+  }
   g_input_state = p1 | (p2 << 12);
 }
 
