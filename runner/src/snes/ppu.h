@@ -127,6 +127,9 @@ enum {
   /* Do not merge captured pixels back into either main or subscreen. The host
    * can then reinsert them without a duplicate remaining in renderBuffer. */
   kPpuOverlayFlag_RemoveFromGame = 1,
+  /* Export only pixels visible above the composed main-screen layers.
+   * For BG layers this is evaluated in normal background drawing order. */
+  kPpuOverlayFlag_VisibleOnly = 2,
 };
 
 typedef struct PpuOverlayCapture {
@@ -714,7 +717,7 @@ bool PpuBindOverlaySurface(Ppu *ppu, PpuOverlaySource source,
 // rectangle from BG1-BG4 or OBJ. With RemoveFromGame, pixels inside the rect
 // are omitted from both main and subscreen while still exported with palette,
 // transparency, windows, mosaic, and master brightness resolved. Coverage:
-// Mode 1 BG1/BG2 (4bpp) and BG3 (2bpp), and Mode 7 BG1; other modes/layers
+// Mode 1 BG1/BG2 (4bpp) and BG3 (2bpp), Mode 3 BG2, and Mode 7 BG1; other modes/layers
 // leave the source inactive.
 void PpuClearOverlayCaptures(Ppu *ppu);
 bool PpuSetOverlayCapture(Ppu *ppu, PpuOverlaySource source,

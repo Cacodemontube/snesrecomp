@@ -255,7 +255,7 @@ bool PpuSetOverlayCapture(Ppu *ppu, PpuOverlaySource source,
   capture->x1 = (int16_t)x1;
   capture->y0 = (int16_t)y0;
   capture->y1 = (int16_t)y1;
-  capture->flags = flags & kPpuOverlayFlag_RemoveFromGame;
+  capture->flags = flags & (kPpuOverlayFlag_RemoveFromGame | kPpuOverlayFlag_VisibleOnly);
   capture->oamFirst = 0;
   capture->oamCount = source == kPpuOverlaySource_Obj ? 128 : 0;
   return true;
@@ -2185,9 +2185,15 @@ static void PpuWriteOverlayRenderLine(Ppu *ppu, PpuOverlaySource source,
   uint32 *dst = (uint32 *)(ppu->overlayRenderBuffer[source] +
                             (size_t)screen_y * pitch);
   const PpuZbufType *src = ppu->overlayBuffers[source].data;
-  for (int x = x0; x < x1; x++)
-    dst[x + texture_extra] =
-        PpuOverlayColor(ppu, src[x + kPpuExtraLeftRight]);
+  for (int x = x0; x < x1; x++) {
+    unsigned index=x+kPpuExtraLeftRight;
+    bool visible=true;
+    if(capture->flags & kPpuOverlayFlag_VisibleOnly) {
+      PpuZbufType main=ppu->bgBuffers[0].data[index];
+      visible=source==kPpuOverlaySource_Obj ? src[index]==main : src[index]>=main;
+    }
+    dst[x + texture_extra] = visible ? PpuOverlayColor(ppu,src[index]) : 0;
+  }
 }
 
 // Choose the destination priority buffer for a background layer. When the
@@ -2324,12 +2330,14 @@ static void PpuDrawBackgrounds(Ppu *ppu, int y, bool sub) {
   } else if (PPU_mode(ppu) == 3) {
     if (ppu->lineHasSprites) { PPU_T0; PpuDrawSprites(ppu, y, sub, true); PPU_ACC(g_ppu_sec_spr_ms); }
     PpuDrawBackground_8bpp(ppu, y, sub, 0, 0xc000, 0x8000);
+    PpuPixelPrioBufs *layerbuf = PpuBeginBackgroundOverlay(ppu, y, sub, 1);
     if (PPU_bigTiles(ppu, 1))
-      PpuDrawBackgroundBig(ppu, &ppu->bgBuffers[sub], y, sub, 1, 4,
+      PpuDrawBackgroundBig(ppu, layerbuf, y, sub, 1, 4,
                            0xb100, 0x7100, false);
     else
-      PpuDrawBackground_4bpp(ppu, &ppu->bgBuffers[sub], y, sub, 1,
+      PpuDrawBackground_4bpp(ppu, layerbuf, y, sub, 1,
                              0xb100, 0x7100);
+    PpuFinishBackgroundOverlay(ppu, y, sub, 1, layerbuf);
   } else {
     // mode 7
     PpuPixelPrioBufs *layerbuf = PpuBeginBackgroundOverlay(ppu, y, sub, 0);
