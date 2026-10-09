@@ -2,7 +2,7 @@
 #
 # Run by snesrecomp_target_mod_catalog as a POST_BUILD step, with:
 #   SNES_MOD_DEST   the staged <exe-dir>/mods/preloaded/packages
-#   SNES_MOD_IDS    '|'-separated package ids the source tree declared
+#   SNES_MOD_IDS    comma-separated package ids the source tree declared
 #   SNES_MOD_TARGET the target, for the message
 #
 # A staged catalog that is missing a package is the failure this exists to
@@ -13,6 +13,7 @@ if(NOT DEFINED SNES_MOD_DEST OR NOT DEFINED SNES_MOD_IDS)
 endif()
 
 string(REPLACE "|" ";" _ids "${SNES_MOD_IDS}")
+string(REPLACE "," ";" _ids "${_ids}")
 set(_missing "")
 foreach(_id IN LISTS _ids)
     if(NOT IS_DIRECTORY "${SNES_MOD_DEST}/${_id}")
