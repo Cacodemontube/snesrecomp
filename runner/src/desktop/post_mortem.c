@@ -561,16 +561,30 @@ static void dump_tripwires_json(FILE *f) {
 
 #ifdef _WIN32
 
+#if defined(_M_IX86) || defined(__i386__)
+#define HOST_STACK_MACHINE IMAGE_FILE_MACHINE_I386
+#define HOST_CONTEXT_PC Eip
+#define HOST_CONTEXT_SP Esp
+#define HOST_CONTEXT_FP Ebp
+#define HOST_CONTEXT_JSON "\"eip\":%llu,\"esp\":%llu,\"ebp\":%llu,"
+#else
+#define HOST_STACK_MACHINE IMAGE_FILE_MACHINE_AMD64
+#define HOST_CONTEXT_PC Rip
+#define HOST_CONTEXT_SP Rsp
+#define HOST_CONTEXT_FP Rbp
+#define HOST_CONTEXT_JSON "\"rip\":%llu,\"rsp\":%llu,\"rbp\":%llu,"
+#endif
+
 /* Walk one thread's host stack, write up to `max_frames` frames as
  * comma-separated JSON objects to `f`. Caller wraps in []. */
 static void dump_thread_stack_json(FILE *f, HANDLE proc, HANDLE thr,
                                    CONTEXT *ctx, int max_frames) {
     STACKFRAME64 frame;
     memset(&frame, 0, sizeof(frame));
-    DWORD machine = IMAGE_FILE_MACHINE_AMD64;
-    frame.AddrPC.Offset    = ctx->Rip; frame.AddrPC.Mode    = AddrModeFlat;
-    frame.AddrFrame.Offset = ctx->Rbp; frame.AddrFrame.Mode = AddrModeFlat;
-    frame.AddrStack.Offset = ctx->Rsp; frame.AddrStack.Mode = AddrModeFlat;
+    DWORD machine = HOST_STACK_MACHINE;
+    frame.AddrPC.Offset    = ctx->HOST_CONTEXT_PC; frame.AddrPC.Mode    = AddrModeFlat;
+    frame.AddrFrame.Offset = ctx->HOST_CONTEXT_FP; frame.AddrFrame.Mode = AddrModeFlat;
+    frame.AddrStack.Offset = ctx->HOST_CONTEXT_SP; frame.AddrStack.Mode = AddrModeFlat;
     char symbuf[sizeof(SYMBOL_INFO) + 256];
     SYMBOL_INFO *sym = (SYMBOL_INFO *)symbuf;
     memset(symbuf, 0, sizeof(symbuf));
@@ -679,12 +693,12 @@ static void dump_all_threads_json(FILE *f, void *fault_info_void) {
             first_thread = 0;
             fprintf(f,
                 "    {\"tid\":%lu,\"name\":\"%s\","
-                "\"rip\":%llu,\"rsp\":%llu,\"rbp\":%llu,"
+                HOST_CONTEXT_JSON
                 "\"frames\":[",
                 (unsigned long)tid, esc_name,
-                (unsigned long long)thr_ctx.Rip,
-                (unsigned long long)thr_ctx.Rsp,
-                (unsigned long long)thr_ctx.Rbp);
+                (unsigned long long)thr_ctx.HOST_CONTEXT_PC,
+                (unsigned long long)thr_ctx.HOST_CONTEXT_SP,
+                (unsigned long long)thr_ctx.HOST_CONTEXT_FP);
             dump_thread_stack_json(f, proc, thr, &thr_ctx, 24);
             fputs("]}", f);
 
