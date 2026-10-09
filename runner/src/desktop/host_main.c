@@ -419,7 +419,7 @@ static uint64_t g_state_generation;
 
 /* The last field actually presented, kept so an overlay can freeze the guest
  * and still have something to draw behind itself. Sized like g_my_pixels. */
-static uint8_t g_frozen_frame[kSnesDesktopMaxFrameWidth * 4 * 240];
+static uint8_t g_frozen_frame[kSnesDesktopMaxFrameWidth * 4 * kSnesDesktopMaxFrameHeight];
 static int g_frozen_w, g_frozen_h;
 /* The simulated frame the next present shows. Read by SNESRECOMP_SCREENSHOT
  * and by frame blending, which advances its kept frame once per simulated
@@ -432,7 +432,7 @@ static unsigned g_present_frame;
 #if defined(SNESRECOMP_HOST_HAS_BLEND) || SNESRECOMP_FRAME_STAGING_HLE
 /* Compose where reads are cheap, then upload with a write-only row copy.
  * The frozen overlay snapshot and optional OSD/blend read this frame. */
-static uint8 g_frame_stage[kSnesDesktopMaxFrameWidth * 4 * 240];
+static uint8 g_frame_stage[kSnesDesktopMaxFrameWidth * 4 * kSnesDesktopMaxFrameHeight];
 #endif
 
 static GamepadInfo g_gamepad[2];
@@ -586,7 +586,9 @@ static void PreparePpuFrame(void) {
     g_game->prepare_frame(drawable_width, drawable_height, &fw, &fh);
   int max_width = g_game->native_widescreen ? kPpuBufWidth : kSnesDesktopMaxFrameWidth;
   if (fw <= 0 || fw > max_width) fw = 256;
-  if (fh <= 0 || fh > 240) fh = 224;
+  int max_height = g_game->draw_frame && !g_game->native_widescreen
+      ? kSnesDesktopMaxFrameHeight : 240;
+  if (fh <= 0 || fh > max_height) fh = 224;
   g_snes_width = fw;
   g_snes_height = fh;
   /* Native widescreen ports rasterize directly into the widened field. */
@@ -934,7 +936,9 @@ static void ScriptDump(const char *tag, unsigned frame) {
   const char *dir = getenv("SNESRECOMP_DUMP_DIR");
   const int pitch = (g_game->native_widescreen ? g_snes_width : 256) * 4;
   int rc = snes_state_dump(dir ? dir : "", tag, g_my_pixels, pitch, g_ws_extra,
-                           g_snes_height, frame);
+                           g_game->native_widescreen ? g_snes_height :
+                           (g_game->frame_height > 0 && g_game->frame_height <= 240
+                            ? g_game->frame_height : 224), frame);
   fprintf(stderr, "script f=%u dump %s %s\n", frame, tag, rc ? "partial" : "ok");
 }
 

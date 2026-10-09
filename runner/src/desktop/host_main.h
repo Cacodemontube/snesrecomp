@@ -40,7 +40,7 @@
 #include "display_aspect.h"
 
 /* Compositor surfaces may be wider than the guest PPU's own line buffer. */
-enum { kSnesDesktopMaxFrameWidth = 1024 };
+enum { kSnesDesktopMaxFrameWidth = 4096, kSnesDesktopMaxFrameHeight = 960 };
 
 #ifdef __cplusplus
 extern "C" {
