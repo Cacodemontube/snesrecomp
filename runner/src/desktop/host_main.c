@@ -4242,6 +4242,10 @@ static void PollKeyboardControls(const uint8_t *keys) {
     if (g_config.player_src[0] == 1) p1 = g_game->keyboard_input(keys, 0, (uint16_t)p1);
     if (g_config.player_src[1] == 1) p2 = g_game->keyboard_input(keys, 1, (uint16_t)p2);
   }
+  if (!g_overlay_modal && g_game->auxiliary_input) {
+    p1 = g_game->auxiliary_input(0, (uint16_t)p1);
+    p2 = g_game->auxiliary_input(1, (uint16_t)p2);
+  }
   g_input_state = p1 | (p2 << 12);
 }
 

@@ -201,6 +201,8 @@ typedef struct SnesDesktopHostGame {
   /* Title-owned keyboard policy. Return the replacement 12-bit runner pad
    * for this seat; NULL preserves keybinds.ini. Called only for keyboard seats. */
   uint16_t (*keyboard_input)(const uint8_t *keys, unsigned player, uint16_t defaults);
+  /* Optional title-owned mouse/keyboard additions for every seat source. */
+  uint16_t (*auxiliary_input)(unsigned player, uint16_t defaults);
   /* SDL_Event, kept opaque here to avoid an SDL dependency in this contract.
    * Return nonzero to consume a gameplay event before shared hotkeys. */
   int (*input_event)(const void *event);
