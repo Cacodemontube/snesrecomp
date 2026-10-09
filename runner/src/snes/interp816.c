@@ -161,8 +161,8 @@ uint64_t snesrecomp_host_now_ns(void) {
     int (__cdecl *qpf_fn)(T_LARGE_INT *) = (void *)0;
     {
         /* Link-time import: kernel32.lib exports these by name. */
-        extern int __cdecl QueryPerformanceCounter(T_LARGE_INT *);
-        extern int __cdecl QueryPerformanceFrequency(T_LARGE_INT *);
+        extern int __stdcall QueryPerformanceCounter(T_LARGE_INT *);
+        extern int __stdcall QueryPerformanceFrequency(T_LARGE_INT *);
         static double s_scale = -1.0;
         if (s_scale < 0.0) {
             T_LARGE_INT f; f.QuadPart = 0;
