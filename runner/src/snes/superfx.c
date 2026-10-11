@@ -397,12 +397,25 @@ struct SuperFxPcHookSlot {
   void *context;
 };
 
+static void rebuild_pc_hook_filter(SuperFx *f) {
+  memset(f->pc_hook_filter, 0, sizeof(f->pc_hook_filter));
+  for(unsigned i=0;i<f->pc_hook_count;i++) {
+    unsigned low=f->pc_hooks[i].pc24 & 255;
+    f->pc_hook_filter[low>>6] |= UINT64_C(1) << (low&63);
+  }
+}
+
 /* Run the title hook for the instruction about to execute, if one is armed.
  * Returns true when the hook redirected: the pipeline then holds the
  * redirect target, R15 points past it, and the hooked opcode is dropped. */
 static bool run_pc_hook(SuperFx *f) {
   const uint32_t pc = f->pipeline_pc;
   if (pc == UINT32_MAX) return false;
+  unsigned low=pc & 255;
+  /* Most instructions cannot be hook targets. Mods must not scan every
+   * installed observer for every GSU instruction, including private replays.
+   * Full bank/address comparison below resolves filter collisions. */
+  if(!(f->pc_hook_filter[low>>6] & (UINT64_C(1) << (low&63))))return false;
   for (unsigned i = 0; i < f->pc_hook_count; i++) {
     const struct SuperFxPcHookSlot *s = &f->pc_hooks[i];
     if (s->pc24 != pc) continue;
@@ -431,6 +444,7 @@ bool superfx_set_pc_hook(SuperFx *f, uint32_t pc24, SuperFxPcHook *hook,
       f->pc_hooks[i].context = context;
     } else {
       f->pc_hooks[i] = f->pc_hooks[--f->pc_hook_count];
+      rebuild_pc_hook_filter(f);
     }
     return true;
   }
@@ -445,10 +459,13 @@ bool superfx_set_pc_hook(SuperFx *f, uint32_t pc24, SuperFxPcHook *hook,
   }
   f->pc_hooks[f->pc_hook_count++] =
       (struct SuperFxPcHookSlot){pc24, hook, context};
+  rebuild_pc_hook_filter(f);
   return true;
 }
 
-void superfx_clear_pc_hooks(SuperFx *f) { if (f) f->pc_hook_count = 0; }
+void superfx_clear_pc_hooks(SuperFx *f) {
+  if(f) { f->pc_hook_count=0;rebuild_pc_hook_filter(f); }
+}
 uint8_t superfx_ram_peek(const SuperFx *f, uint16_t address) {
   /* A GSU store completes a few clocks after the instruction that issued it
    * (write_ram_buffer); until then it lives in ramar/ramdr, and fx->ram still
@@ -608,6 +625,7 @@ bool superfx_replay_snapshot_with_history(const SuperFx *source,
   result->ws_render_active = result->ws_replay_pending = result->ws_replay_mode = false;
   result->pc_hooks = private_hooks;
   result->pc_hook_count = result->pc_hook_cap = (uint16_t)hook_count;
+  rebuild_pc_hook_filter(result);
   result->redirect_pending = false;
   unsigned guard = 0;
   if (history) {
@@ -707,6 +725,7 @@ void superfx_reset(SuperFx *f) {
   f->vcr=4; f->pipeline=1; f->pixel[0].offset=f->pixel[1].offset=UINT16_MAX;
   f->pipeline_pc=UINT32_MAX;
   f->pc_hooks=pc_hooks; f->pc_hook_count=pc_hook_count; f->pc_hook_cap=pc_hook_cap;
+  rebuild_pc_hook_filter(f);
 }
 bool superfx_is_running(const SuperFx *f) { return f && (f->sfr & SFR_G) != 0; }
 

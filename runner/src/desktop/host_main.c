@@ -2007,8 +2007,6 @@ static _Thread_local unsigned g_apu_lock_depth;
 static _Thread_local bool g_audio_consumer_stalled;
 static _Thread_local uint64_t g_audio_stalled_callback;
 static uint64_t g_audio_callback_count;  /* protected by g_audio_mutex */
-static bool g_audio_primed;  /* protected by g_audio_mutex */
-#define HOST_AUDIO_PREFILL 2136u
 #define HOST_AUDIO_HIGH_WATER 4096u
 #if SNESRECOMP_SDL3
 /* SDL3 replaced the pull callback with an SDL_AudioStream the app pushes into,
@@ -2021,7 +2019,6 @@ static size_t g_audio_stream_buffer_size;
 static void ResetAudioTimeline(void) {
   RtlApuLock();
   g_audiobuffer_end = g_audiobuffer_cur;
-  g_audio_primed = false;
   RtlApuUnlock();
 #if SNESRECOMP_SDL3
   /* The stream callback takes the APU mutex: never acquire SDL's stream
@@ -2067,7 +2064,42 @@ void RtlApuUnlock(void) {
 
 /* Backend-agnostic mixer body. SDL2 calls it from its pull callback; SDL3 calls
  * it to fill a scratch buffer that is then pushed into the audio stream. */
+/* Opt-in, bounded audio evidence. Allocate before playback and flush after
+ * closing the device: file I/O in this callback would manufacture clicks. */
+static uint8_t *g_audio_capture;
+static size_t g_audio_capture_size, g_audio_capture_capacity;
+static unsigned g_audio_capture_rate;
+static const char *g_audio_capture_path;
+static void AudioCaptureStart(unsigned rate) {
+  g_audio_capture_path = getenv("SNESRECOMP_AUDIO_OUTPUT_WAV");
+  if (!g_audio_capture_path || !*g_audio_capture_path) return;
+  g_audio_capture_rate = rate;
+  g_audio_capture_capacity = (size_t)rate * 4 * 60;
+  g_audio_capture = malloc(g_audio_capture_capacity);
+}
+static void AudioCaptureFinish(void) {
+  if (!g_audio_capture) return;
+  FILE *f = fopen(g_audio_capture_path, "wb");
+  if (f) {
+    uint8_t header[44] = {0};
+    memcpy(header,"RIFF",4);memcpy(header+8,"WAVEfmt ",8);
+    memcpy(header+36,"data",4);
+    uint32_t values[5]={(uint32_t)g_audio_capture_size+36,16,
+                       g_audio_capture_rate,g_audio_capture_rate*4,
+                       (uint32_t)g_audio_capture_size};
+    unsigned offsets[5]={4,16,24,28,40};
+    for(unsigned i=0;i<5;i++)for(unsigned b=0;b<4;b++)
+      header[offsets[i]+b]=(uint8_t)(values[i]>>(b*8));
+    header[20]=1;header[22]=2;header[32]=4;header[34]=16;
+    fwrite(header,1,sizeof(header),f);
+    fwrite(g_audio_capture,1,g_audio_capture_size,f);fclose(f);
+  }
+  free(g_audio_capture);g_audio_capture=NULL;
+  g_audio_capture_size=g_audio_capture_capacity=0;
+}
 static void FillAudioBuffer(Uint8 *stream, int len) {
+  Uint8 *capture_stream=stream;
+  int capture_len=len;
   /* Boot-stage marker: proves the audio thread reached the mixer at
    * least once (the "crashed before the first sound" class of report). */
   static SDL_atomic_t first_cb;
@@ -2077,19 +2109,10 @@ static void FillAudioBuffer(Uint8 *stream, int len) {
   ++g_audio_callback_count;
   while (len != 0) {
     if (g_audiobuffer_end - g_audiobuffer_cur == 0) {
-      uint32_t available = dsp_available(g_snes->apu->dsp);
-      if (!g_audio_primed && available < HOST_AUDIO_PREFILL) {
-        /* Startup/save-load starvation needs a cushion before playback
-         * resumes. Retain all native PCM; count the undelivered output just
-         * like any other underrun rather than hiding it from diagnostics. */
-        memset(g_audiobuffer, 0, g_frames_per_block * g_audio_channels * sizeof(int16));
-        audio_trace_on_output_underflow(available, g_frames_per_block);
-      } else {
-        g_audio_primed = true;
-        RtlRenderAudio((int16 *)g_audiobuffer, g_frames_per_block, g_audio_channels);
-        if (dsp_available(g_snes->apu->dsp) < 4)
-          g_audio_primed = false;
-      }
+      /* The native consumer owns refill and continuity across callbacks.
+       * A second host gate used to replace its unfinished starvation fade
+       * with an immediate zero block, creating a click at the boundary. */
+      RtlRenderAudio((int16 *)g_audiobuffer, g_frames_per_block, g_audio_channels);
       g_audiobuffer_cur = g_audiobuffer;
       g_audiobuffer_end = g_audiobuffer + g_frames_per_block * g_audio_channels * sizeof(int16);
     }
@@ -2111,6 +2134,13 @@ static void FillAudioBuffer(Uint8 *stream, int len) {
     g_audiobuffer_cur += n;
     stream += n;
     len -= n;
+  }
+  if(g_audio_capture && capture_len>0) {
+    size_t count=(size_t)capture_len;
+    if(count>g_audio_capture_capacity-g_audio_capture_size)
+      count=g_audio_capture_capacity-g_audio_capture_size;
+    memcpy(g_audio_capture+g_audio_capture_size,capture_stream,count);
+    g_audio_capture_size+=count;
   }
   SDL_UnlockMutex(g_audio_mutex);
 }
@@ -3535,6 +3565,7 @@ error_reading:;
       return 1;
     }
     g_audio_channels = 2;
+    AudioCaptureStart((unsigned)have.freq);
     /* The SPC's native rate is 32040 Hz (1.024 MHz / 32), not 32000. The
      * consumer converts onto the device rate and cannot infer it. */
     RtlSetAudioOutputRate(have.freq);
@@ -4195,6 +4226,7 @@ error_reading:;
   SDL_CloseAudioDevice(g_audio_device);
 #endif
   SDL_DestroyMutex(g_audio_mutex);
+  AudioCaptureFinish();
   free(g_audiobuffer);
 
   g_renderer_funcs.Destroy();

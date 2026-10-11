@@ -89,6 +89,21 @@ static void short_callback_recovery(void) {
   assert(previous==10000 && stats().output_underflows==underflows+1);
   assert(stats().output_priming>0);
 }
+static void starvation_at_block_end(void) {
+  start();produce(2136);render(534);render(534);
+  /* Run out near the end of a device block. The next block must finish
+   * the same fade, even though the queue now has fewer than four samples. */
+  queue.sampleRead=queue.sampleWrite-530;
+  render(534);
+  assert(dsp_available(&queue)<4 && s_render_fade_out>0);
+  int16_t previous=output[1066];
+  assert(previous>5000);
+  render(534);
+  for(unsigned i=0;i<534;i++) {
+    assert(abs(output[i*2]-previous)<=157);previous=output[i*2];
+  }
+  assert(previous==0);
+}
 static void turbo_stage_entry_recovery(void) {
   static Snes machine;
   static Apu apu;
@@ -132,7 +147,7 @@ static void console_reset_audio(void) {
   g_spc_player=NULL;
 }
 int main(void) {
-  reset_and_rates();short_callback_recovery();turbo_stage_entry_recovery();
+  reset_and_rates();short_callback_recovery();starvation_at_block_end();turbo_stage_entry_recovery();
   console_reset_audio();
   puts("audio delivery: reset/start priming, rates, starvation ramps, turbo recovery, producer isolation and console reset passed");
   return 0;

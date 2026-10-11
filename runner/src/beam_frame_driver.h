@@ -1,5 +1,6 @@
 #ifndef SNESRECOMP_BEAM_FRAME_DRIVER_H
 #define SNESRECOMP_BEAM_FRAME_DRIVER_H
+#include <stdbool.h>
 
 /* Beam-aligned frame driver for whole-program LLE ports.
  *
@@ -28,5 +29,8 @@ void snes_beam_frame_driver_draw_ppu_frame_observed(
     SnesBeamRasterObserver *observer, void *context);
 /* Forget the booted machine: the next frame starts from the reset vector. */
 void snes_beam_frame_driver_reset(void);
+struct SaveLoadInfo;
+void snes_beam_frame_driver_save_state(struct SaveLoadInfo *sli);
+bool snes_beam_frame_driver_load_state(struct SaveLoadInfo *sli);
 
 #endif /* SNESRECOMP_BEAM_FRAME_DRIVER_H */

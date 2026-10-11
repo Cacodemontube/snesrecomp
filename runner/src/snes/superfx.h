@@ -76,6 +76,7 @@ typedef struct SuperFx {
   uint32_t pipeline_pc;
   struct SuperFxPcHookSlot *pc_hooks;
   uint16_t pc_hook_count, pc_hook_cap;
+  uint64_t pc_hook_filter[4]; /* host-only low-byte rejection filter */
   bool redirect_pending;
   uint16_t redirect_pc;
 

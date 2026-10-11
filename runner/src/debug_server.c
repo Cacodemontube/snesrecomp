@@ -5311,7 +5311,7 @@ static void cmd_get_ppu_state(const char *args) {
              "\"windowsel\":\"0x%08x\",\"wbgobjlog\":\"0x%04x\","
              "\"cgadsub\":\"0x%02x\",\"cgwsel\":\"0x%02x\","
              "\"fixedColor\":\"0x%04x\","
-             "\"vramPointer\":\"0x%04x\",\"vramIncrement\":%d,\"vramRemapMode\":%d,"
+             "\"vramPointer\":\"0x%04x\",\"vramIncrement\":%d,\"vramRemapMode\":%d,\"vramIncrementOnHigh\":%s,"
              "\"cgramPointer\":\"0x%02x\","
              "\"window1left\":%d,\"window1right\":%d,\"window2left\":%d,\"window2right\":%d,"
              "\"widescreen\":{\"budget\":%u,\"left\":%u,\"right\":%u,\"bottom\":%u,"
@@ -5335,7 +5335,7 @@ static void cmd_get_ppu_state(const char *args) {
              p->windowsel, p->wbgobjlog,
              p->cgadsub, p->cgwsel,
              p->fixedColor,
-             p->vramPointer, p->vramIncrement, p->vramRemapMode,
+             p->vramPointer, p->vramIncrement, p->vramRemapMode,p->vramIncrementOnHigh ? "true" : "false",
              p->cgramPointer,
              p->window1left, p->window1right, p->window2left, p->window2right,
              p->extraLeftRight, p->extraLeftCur, p->extraRightCur,

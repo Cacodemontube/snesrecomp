@@ -36,6 +36,12 @@ bool snes_host_clock_presentation_due(const SnesHostClock *c, double now) {
 bool snes_host_clock_presentation_allowed(const SnesHostClock *c, double now,
                                           bool preserve_debt, double draw_cost) {
   if (!preserve_debt) return true;
+  /* A slow guest can remain behind forever. Keep catch-up from starving
+   * video while simulation and audio continue: publish at least once per
+   * two frame periods. A large level-start backlog must not turn subsequent
+   * gameplay into ten updates per second while the guest catches up. */
+  double maximum_wait = fmax(2.0 / c->simulation_hz, 2.0 / c->presentation_hz);
+  if (now - c->next_presentation >= maximum_wait) return true;
   if (snes_host_clock_simulation_due(c, now)) return false;
   if (!isfinite(draw_cost) || draw_cost < 0) draw_cost = 0;
   return now + draw_cost <= c->next_simulation;

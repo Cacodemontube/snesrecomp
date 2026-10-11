@@ -109,6 +109,24 @@ int main(void) {
   assert(priority.simulation_frames >= 119 && priority.simulation_frames <= 121);
   assert(priority.presentations > 60 && priority.presentations < 119);
 
+  /* Sustained overload used to advance the game with zero video updates. */
+  snes_host_clock_reset(&priority, 0, 60, 60);
+  now = 0;
+  double last_picture = 0;
+  while (now < 2) {
+    now += 0.025;
+    snes_host_clock_simulation_done(&priority, now, true, 1);
+    if (snes_host_clock_presentation_due(&priority, now) &&
+        snes_host_clock_presentation_allowed(&priority, now, true, 0)) {
+      assert(now - last_picture <= 0.075);
+      last_picture = now;
+      snes_host_clock_presentation_done(&priority, now);
+      now += 0.010;
+    }
+  }
+  assert(priority.simulation_frames > 50);
+  assert(priority.presentations >= 30);
+
   puts("host_clock: all checks passed");
   return 0;
 }

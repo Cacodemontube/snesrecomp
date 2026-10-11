@@ -95,6 +95,16 @@ int main(void) {
   run(fx);
   CHECK(fired_a == 1 && fired_b == 0 && fx->r[5].data == 1);
 
+  /* Removing a target must retain a colliding filter bit for another bank;
+   * that other bank must never fire on this program's address. */
+  CHECK(superfx_set_pc_hook(fx, 0x010005u, hook_a, NULL));
+  CHECK(superfx_set_pc_hook(fx, 0x000005u, NULL, NULL));
+  fired_a=0;
+  run(fx);
+  CHECK(fired_a==0);
+  CHECK(superfx_set_pc_hook(fx, 0x000005u, hook_a, NULL));
+  CHECK(superfx_set_pc_hook(fx, 0x010005u, NULL, NULL));
+
   /* A reset keeps host policy. */
   superfx_reset(fx);
   fired_a = 0;
