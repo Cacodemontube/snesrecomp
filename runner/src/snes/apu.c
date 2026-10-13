@@ -5,6 +5,11 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <time.h>
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
 
 
 #include "apu.h"
@@ -140,8 +145,33 @@ bool apu_runUntilPortQueueEmpty(Apu* apu, uint32_t max_cycles) {
   return true;
 }
 
+static uint64_t apu_profile_ns,apu_profile_calls;
+void apu_perf_snapshot(uint64_t *ns,uint64_t *calls) {
+  if(ns)*ns=apu_profile_ns;
+  if(calls)*calls=apu_profile_calls;
+}
+static uint64_t apu_profile_now(void) {
+#ifdef _WIN32
+  LARGE_INTEGER counter,frequency;
+  QueryPerformanceCounter(&counter);QueryPerformanceFrequency(&frequency);
+  return (uint64_t)((double)counter.QuadPart*1e9/(double)frequency.QuadPart);
+#else
+  struct timespec t;
+  if(clock_gettime(CLOCK_MONOTONIC,&t)!=0)return 0;
+  return (uint64_t)t.tv_sec*1000000000u+(uint64_t)t.tv_nsec;
+#endif
+}
+static void apu_profile_finish(uint64_t start) {
+  if(!start)return;
+  uint64_t end=apu_profile_now();
+  if(end>=start)apu_profile_ns+=end-start;
+  apu_profile_calls++;
+}
 bool apu_runToGuestCycle(Apu* apu, uint64_t guest_cycle,
                          uint32_t max_cycles) {
+  static int profile=-1;
+  if(profile<0) { const char *v=getenv("SNESRECOMP_PHASE_MS");profile=v && *v && *v!='0'; }
+  uint64_t start=0;
   if (!apu->portTimeValid || guest_cycle < apu->portGuestAnchor)
     return true;
 
@@ -149,6 +179,10 @@ bool apu_runToGuestCycle(Apu* apu, uint64_t guest_cycle,
                     (guest_cycle - apu->portGuestAnchor);
   if (target < apu->portLastTarget)
     target = apu->portLastTarget;
+  bool pending=apu->portQHead != apu->portQTail &&
+      apu->portQueue[apu->portQHead & (APU_PORT_QUEUE_LEN - 1)].target_cycle<=target;
+  if(apu->portClock>=target && !pending)return true;
+  if(profile)start=apu_profile_now();
 
   for (;;) {
     bool due_event = false;
@@ -157,10 +191,14 @@ bool apu_runToGuestCycle(Apu* apu, uint64_t guest_cycle,
           &apu->portQueue[apu->portQHead & (APU_PORT_QUEUE_LEN - 1)];
       due_event = w->target_cycle <= target;
     }
-    if (apu->portClock >= target && !due_event)
+    if (apu->portClock >= target && !due_event) {
+      apu_profile_finish(start);
       return true;
-    if (max_cycles-- == 0)
+    }
+    if (max_cycles-- == 0) {
+      apu_profile_finish(start);
       return false;
+    }
     apu_cycle(apu);
   }
 }

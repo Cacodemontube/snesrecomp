@@ -1089,6 +1089,13 @@ void ChangeWindowScale(int scale_step) {
 static SDL_HitTestResult HitTestCallback(SDL_Window *win, const SDL_Point *pt, void *data) {
   (void)data;
   uint32 flags = SDL_GetWindowFlags(win);
+  /* Captured gameplay owns mouse clicks, including Ctrl+fire. Returning
+   * DRAGGABLE here starts an OS modal move loop before SDL delivers input. */
+#if SNESRECOMP_SDL3
+  if (SDL_GetWindowRelativeMouseMode(win)) return SDL_HITTEST_NORMAL;
+#else
+  if (SDL_GetRelativeMouseMode()) return SDL_HITTEST_NORMAL;
+#endif
   if ((flags & SNESRECOMP_SDL_WINDOW_FULLSCREEN_DESKTOP) != 0 || (flags & SDL_WINDOW_FULLSCREEN) != 0)
     return SDL_HITTEST_NORMAL;
 
@@ -3641,6 +3648,8 @@ error_reading:;
       ? (unsigned)strtoul(HostGetenv("HOST_PROFILE_START_FRAME"), NULL, 10) : 1;
   if (!profile_first) profile_first = 1;
   double profile_window_start = 0;
+  uint64_t apu_profile_start_ns=0,apu_profile_start_calls=0;
+  uint64_t apu_guest_start_ns=0,apu_guest_start_calls=0;
   double run_start = MonotonicSeconds();
   const double run_cpu_start = ProcessCpuSeconds();
   uint8 audiopaused = true;
@@ -3668,6 +3677,8 @@ error_reading:;
     if (profile_requested && !g_profile && g_profile_frame >= profile_first) {
       g_profile = true;
       profile_window_start = MonotonicSeconds();
+      rtl_apu_perf_snapshot(&apu_profile_start_ns,&apu_profile_start_calls);
+      apu_perf_snapshot(&apu_guest_start_ns,&apu_guest_start_calls);
     }
     if (g_state_generation != RtlStateGeneration()) {
       ResetAudioTimeline();
@@ -4187,6 +4198,15 @@ error_reading:;
           names[i], g_timings[i].count, g_timings[i].total * 1000,
           g_timings[i].count ? g_timings[i].total * 1000 / g_timings[i].count : 0,
           g_timings[i].maximum * 1000, g_timings[i].maximum_frame);
+    uint64_t apu_ns=0,apu_calls=0;
+    rtl_apu_perf_snapshot(&apu_ns,&apu_calls);
+    host_report_breadcrumb("audio profile: stage=spc-boundary count=%llu total_ms=%.3f (subset of guest; enable SNESRECOMP_PHASE_MS)",
+        (unsigned long long)(apu_calls-apu_profile_start_calls),
+        (double)(apu_ns-apu_profile_start_ns)/1000000.0);
+    apu_perf_snapshot(&apu_ns,&apu_calls);
+    host_report_breadcrumb("audio profile: stage=spc-dsp-guest-sync count=%llu total_ms=%.3f (subset of guest; enable SNESRECOMP_PHASE_MS)",
+        (unsigned long long)(apu_calls-apu_guest_start_calls),
+        (double)(apu_ns-apu_guest_start_ns)/1000000.0);
   }
 
   if (g_config.autosave && !g_netplay_session)

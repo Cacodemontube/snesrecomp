@@ -112,6 +112,8 @@ bool apu_runUntilPortQueueEmpty(Apu* apu, uint32_t max_cycles);
  * state advance together even when the host audio device cannot play them. */
 bool apu_runToGuestCycle(Apu* apu, uint64_t guest_cycle,
                          uint32_t max_cycles);
+/* Opt-in wall time in guest-driven SPC/DSP batches, excluding empty calls. */
+void apu_perf_snapshot(uint64_t *ns,uint64_t *calls);
 /* HLE for a declared live transfer protocol: wait for the driver-ready AA/BB
  * pair, then deliver the standard CC terminator and wait for its echo. */
 bool apu_waitForTransferReady(Apu* apu, uint8_t request_port,

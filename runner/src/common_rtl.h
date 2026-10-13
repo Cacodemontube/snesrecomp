@@ -63,6 +63,8 @@ void RtlEnableExtendedFrameTiming(void);
  * across fields in the APU clock rather than imposing a per-call minimum. */
 void RtlEnableBeamFrameTiming(void);
 double RtlLastFramePeriods(void);
+/* Opt-in SPC boundary wall time, enabled with SNESRECOMP_PHASE_MS. */
+void rtl_apu_perf_snapshot(uint64_t *ns,uint64_t *calls);
 bool rtl_apu_extended_frame_timing(void);
 void rtl_apu_snapshot_pacing(uint64_t *frame_start_master, uint8_t *frame_time_valid);
 void rtl_apu_restore_pacing(uint64_t frame_start_master, uint8_t frame_time_valid);
